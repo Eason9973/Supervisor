@@ -11,6 +11,7 @@ using System.Threading;
 using System.Net.Sockets;
 using System.Net;
 using System.Diagnostics;
+using System.IO;
 
 namespace WindowsFormsApplication1
 {
@@ -23,6 +24,8 @@ namespace WindowsFormsApplication1
         const int portClient = 21701;
         const int portServer = 21703;
 
+        bool isWaitingReady = false;
+
         public Form1()
         {
             InitializeComponent();
@@ -31,7 +34,7 @@ namespace WindowsFormsApplication1
         }
 
         private void backgoundWork()
-        {
+        {   
             if (isClientMode)
             {
                 if (tClient != null)
@@ -51,6 +54,8 @@ namespace WindowsFormsApplication1
 
                                 Invoke((MethodInvoker)(() =>
                                 {
+                                    appendToLog(msg);
+
                                     switch (msg)
                                     {
                                         case "Give me five!":
@@ -75,14 +80,14 @@ namespace WindowsFormsApplication1
                                             }
                                             break;
 
-                                        case "START":
+                                        case "S2C:Start":
                                             this.txtProgram.Text = "Starting...";
 
                                             Process[] myProcesses1 = System.Diagnostics.Process.GetProcesses();
                                             bool isAlreadyRunning = false;
                                             foreach (System.Diagnostics.Process myProcess in myProcesses1)
                                             {
-                                                if ("game" == myProcess.ProcessName)
+                                                if ("project" == myProcess.ProcessName)
                                                 {
                                                     isAlreadyRunning = true;
                                                 }
@@ -90,36 +95,65 @@ namespace WindowsFormsApplication1
 
                                             if (isAlreadyRunning == false)
                                             {
-                                                ProcessStartInfo info = new ProcessStartInfo();
-                                                info.FileName = "game.exe";
-                                                info.WorkingDirectory = @".\";
-                                                info.WindowStyle = ProcessWindowStyle.Hidden;
-                                                try
+                                                String filename = ".\\project.lnk";
+                                                bool fileExists = true;
+                                                if (!File.Exists(@filename))
                                                 {
-                                                    Process.Start(info);
+                                                    filename = Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory) + ".\\game.lnk";
+                                                    if (!File.Exists(@filename))
+                                                    {
+                                                        filename = ".\\project.exe";
+                                                        if (!File.Exists(@filename))
+                                                        {
+                                                            fileExists = false;
+                                                        }
+                                                    }
                                                 }
-                                                catch
+                                                if (fileExists)
                                                 {
+                                                    ProcessStartInfo info = new ProcessStartInfo();
+                                                    info.FileName = filename;
+                                                    info.WindowStyle = ProcessWindowStyle.Normal;
+                                                    try
+                                                    {
+                                                        Process.Start(info);
+                                                    }
+                                                    catch
+                                                    {
 
+                                                    }
                                                 }
                                             }
                                             break;
 
-                                        case "STOP":
+                                        case "S2C:Stop":
                                             this.txtProgram.Text = "Stoping...";
                                             Process[] myProcesses = System.Diagnostics.Process.GetProcesses();
                                             foreach (System.Diagnostics.Process myProcess in myProcesses)
                                             {
-                                                if ("game" == myProcess.ProcessName)
+                                                if ("project" == myProcess.ProcessName)
                                                 {
                                                     myProcess.Kill();
                                                 }
                                             }
                                             break;
 
-                                        case "SHUTDOWN":
+                                        case "S2C:Shutdown":
                                             this.txtProgram.Text = "Shutdown...";
-                                            Process.Start("shutdown.exe", "-s -t 10");
+                                            Process.Start("shutdown.exe", "-s -t 5");
+                                            break;
+
+                                        case "S2C:Restart":
+                                            this.txtProgram.Text = "Restarting computer...";
+                                            Process.Start("shutdown.exe", "-r -t 5");
+                                            break;
+
+                                        case "COMMAND:READY":
+                                            if (isWaitingReady)
+                                            {
+                                                isWaitingReady = false;
+                                                udpSend(IPAddress.Loopback, "Command:Roger");
+                                            }
                                             break;
 
                                         default:
@@ -133,7 +167,7 @@ namespace WindowsFormsApplication1
                     {
                         if (this.txtProgram.Text == "")
                         {
-                            this.txtProgram.Text = ex.ToString();
+                            //this.txtProgram.Text = ex.ToString();
                         }
                     }
                 });
@@ -196,14 +230,12 @@ namespace WindowsFormsApplication1
         {
             isClientMode = this.radioButton1.Checked;
 
-            this.btnBrowser.Enabled = isClientMode;
-            this.btnTest.Enabled = isClientMode;
-
             this.btnScan.Enabled = !isClientMode;
             this.checkedListClients.Enabled = !isClientMode;
             this.btnStart.Enabled = !isClientMode;
             this.btnStop.Enabled = !isClientMode;
             this.btnShutdown.Enabled = !isClientMode;
+            this.btnRestart.Enabled = !isClientMode;
             
             backgoundWork();
         }
@@ -237,6 +269,14 @@ namespace WindowsFormsApplication1
             this.progressBarScan.Visible = true;
         }
 
+        private void appendToLog(String msg)
+        {
+            this.txtLog.Text += msg;
+            this.txtLog.Text += "\r\n";
+            this.txtLog.SelectionStart = this.txtLog.Text.Length;
+            this.txtLog.ScrollToCaret();
+        }
+
         private void udpSend(IPAddress ip, String msg)
         {
             Socket socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
@@ -255,6 +295,8 @@ namespace WindowsFormsApplication1
             byte[] buffer = Encoding.UTF8.GetBytes(msg);
             socket.SendTo(buffer, iep);
             socket.Close();
+
+            appendToLog(msg);
         }
 
         private void btnStart_Click(object sender, EventArgs e)
@@ -270,7 +312,7 @@ namespace WindowsFormsApplication1
                         ipString = ipString.Substring(0, endIndex);
                         IPAddress ip;
                         IPAddress.TryParse(ipString, out ip);
-                        udpSend(ip, "START");
+                        udpSend(ip, "S2C:Start");
                     }
                 }
             }
@@ -289,7 +331,7 @@ namespace WindowsFormsApplication1
                         ipString = ipString.Substring(0, endIndex);
                         IPAddress ip;
                         IPAddress.TryParse(ipString, out ip);
-                        udpSend(ip, "STOP");
+                        udpSend(ip, "S2C:Stop");
                     }
                 }
             }
@@ -308,7 +350,7 @@ namespace WindowsFormsApplication1
                         ipString = ipString.Substring(0, endIndex);
                         IPAddress ip;
                         IPAddress.TryParse(ipString, out ip);
-                        udpSend(ip, "SHUTDOWN");
+                        udpSend(ip, "S2C:Shutdown");
                     }
                 }
             }
@@ -336,9 +378,83 @@ namespace WindowsFormsApplication1
             }
         }
 
-        private void Form1_Load(object sender, EventArgs e)
-        {
 
+        const int portLeader = 21701;
+        private void btnLead_Click(object sender, EventArgs e)
+        {
+            // 启动 leader.exe
+            Process[] myProcesses1 = System.Diagnostics.Process.GetProcesses();
+            bool isAlreadyRunning = false;
+            foreach (System.Diagnostics.Process myProcess in myProcesses1)
+            {
+                if ("leader" == myProcess.ProcessName)
+                {
+                    isAlreadyRunning = true;
+                }
+            }
+
+            if (isAlreadyRunning == false)
+            {
+                ProcessStartInfo info = new ProcessStartInfo();
+                info.FileName = "leader.exe";
+                info.WorkingDirectory = @".\";
+                info.WindowStyle = ProcessWindowStyle.Normal;
+                try
+                {
+                    Process.Start(info);
+                }
+                catch
+                {
+
+                }
+            }
+
+            listenToLeader();
+        }
+
+
+        /*
+         *  监听 leader.exe，老地方 UDP.port=23456
+         */
+        private void listenToLeader()
+        {
+            //if I.heard(COMMAND:READY)
+            //   I.say(COMMAND:ROGER)
+            isWaitingReady = true;
+        }
+
+        private void btnReady_Click(object sender, EventArgs e)
+        {
+            udpSend(IPAddress.Loopback, "Command:Ready");
+        }
+
+        private void btnRoger_Click(object sender, EventArgs e)
+        {
+            udpSend(IPAddress.Loopback, "Command:Roger");
+        }
+
+        private void btnResetHMD_Click(object sender, EventArgs e)
+        {
+            udpSend(IPAddress.Loopback, "Command:Reset_HMD");
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            if (!isClientMode)
+            {
+                for (int i = 0; i < checkedListClients.Items.Count; i++)
+                {
+                    if (checkedListClients.GetItemChecked(i))
+                    {
+                        String ipString = checkedListClients.Items[i].ToString();
+                        int endIndex = ipString.IndexOf(" - ");
+                        ipString = ipString.Substring(0, endIndex);
+                        IPAddress ip;
+                        IPAddress.TryParse(ipString, out ip);
+                        udpSend(ip, "S2C:Restart");
+                    }
+                }
+            }
         }
     }
 }
